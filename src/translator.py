@@ -1,41 +1,84 @@
-from typing import Optional, AsyncContextManager
+from typing import Optional, AsyncContextManager, Dict
+
 import aiohttp
 from pydantic import BaseModel
 
-from .config import TranslationConfig, SupportedLanguage
+from .config import LLMConfig
 
 
 class TranslationResponse(BaseModel):
     """
-    Represents a translation response from the service.
+    Slack Block Kit formatted translation response.
+    Ref. https://api.slack.com/reference/surfaces/formatting
     """
 
-    translated_text: str
-    detected_language: SupportedLanguage
+    blocks: list[Dict]
 
 
 class Translator(AsyncContextManager["Translator"]):
-    """Handles communication with the translation service.
+    """Handles communication with the LLM translation service.
 
-    This class is responsible for managing the connection to the translation service
-    and performing translation operations. It implements the async context manager
-    protocol for proper resource management.
-
-    The translator maintains a single aiohttp session for efficient API communication
-    and should be used within an async context manager:
-
-    Example:
-        async with Translator(config) as translator:
-            result = await translator.translate("Hello", target_lang="ko")
-
-    Attributes:
-        config: Configuration for connecting to the translation service
-        session: Managed aiohttp client session for API requests
+    Responsible for sending translation requests to the LLM service and
+    processing the responses in Slack Block Kit format.
     """
 
-    def __init__(self, config: TranslationConfig) -> None:
-        self.config: TranslationConfig = config
+    def __init__(self, config: LLMConfig) -> None:
+        self.config: LLMConfig = config
         self.session: Optional[aiohttp.ClientSession] = None
+        self.translation_prompt = """
+        You are a translation assistant. Please translate the given text according to these rules:
+        
+        1. If the input is in Korean:
+           - Translate to English
+           - Translate to Thai
+        
+        2. If the input is in Thai:
+           - Translate to English 
+           - Translate to Korean
+        
+        3. If the input is in English:
+           - Translate to Korean
+           - Translate to Thai
+        
+        Translation Guidelines:
+        - Maintain the original meaning and nuance
+        - Keep proper nouns and technical terms accurate
+        - Provide natural and fluent translations
+        - Use country flag emojis (🇰🇷 🇺🇸 🇹🇭) before each translation
+        - Show original text in a separate block
+        - Use Slack's Block Kit JSON format
+        
+        Output Format:
+        {
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "Original Text Block"
+                    }
+                },
+                {
+                    "type": "divider"
+                },
+                {
+                    "type": "section", 
+                    "fields": [
+                        {
+                            "type": "mrkdwn",
+                            "text": "Translation 1"
+                        },
+                        {
+                            "type": "mrkdwn",
+                            "text": "Translation 2"
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        Input Message: {text}
+        """  # noqa: W291, W293, E501
 
     async def __aenter__(self) -> "Translator":
         self.session = aiohttp.ClientSession(
@@ -52,50 +95,27 @@ class Translator(AsyncContextManager["Translator"]):
         if self.session:
             await self.session.close()
 
-    async def translate(
-        self,
-        text: str,
-        source_lang: Optional[SupportedLanguage] = None,
-        target_lang: SupportedLanguage = "en",
-    ) -> str:
-        """Translates text to the target language.
+    async def translate(self, text: str) -> TranslationResponse:
+        """Translates text using the LLM service.
 
         Args:
             text: The text to translate
-            source_lang: Source language code (auto-detected if None)
-            target_lang: Target language code for translation
 
         Returns:
-            The translated text
+            TranslationResponse containing Slack Block Kit formatted translations
 
         Raises:
             RuntimeError: If called outside of context manager
-            HTTPError: If the translation service request fails
+            HTTPError: If the LLM service request fails
         """
-
         if not self.session:
             raise RuntimeError("Session not initialized. Use async with context.")
 
-        async with self.session.post(
-            str(self.config.api_url),
-            json={
-                "text": text,
-                "source_language": source_lang,
-                "target_language": target_lang,
-            },
-        ) as response:
-            response.raise_for_status()
-            result = TranslationResponse.model_validate(await response.json())
-            return result.translated_text
-
-    async def detect_language(self, text: str) -> SupportedLanguage:
-        if not self.session:
-            raise RuntimeError("Session not initialized. Use async with context.")
+        prompt = self.translation_prompt.format(text=text)
 
         async with self.session.post(
-            f"{self.config.api_url}/detect",
-            json={"text": text},
+            str(self.config.api_url), json={"prompt": prompt}
         ) as response:
             response.raise_for_status()
             result = await response.json()
-            return result["detected_language"]
+            return TranslationResponse.model_validate(result)

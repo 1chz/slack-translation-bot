@@ -71,32 +71,20 @@ def get_env_or_raise(key: str) -> str:
     return value
 
 
-logger.info("Loading configuration settings...")
+logger.info(">>> Loading settings...")
 
 SLACK_APP_TOKEN = get_env_or_raise("SLACK_APP_TOKEN")
-logger.info("Loaded SLACK_APP_TOKEN")
-
 SLACK_BOT_TOKEN = get_env_or_raise("SLACK_BOT_TOKEN")
-logger.info("Loaded SLACK_BOT_TOKEN")
-
 SLACK_SIGNING_SECRET = get_env_or_raise("SLACK_SIGNING_SECRET")
-logger.info("Loaded SLACK_SIGNING_SECRET")
-
 LLM_API_URL = HttpUrl(get_env_or_raise("LLM_API_URL"))
-logger.info("Loaded LLM_API_URL")
-
 LLM_API_TOKEN = os.getenv("LLM_API_TOKEN")
-logger.info("Loaded LLM_API_TOKEN")
 
 SLACK_CONFIG = SlackConfig(
     app_token=SLACK_APP_TOKEN,
     bot_token=SLACK_BOT_TOKEN,
     signing_secret=SLACK_SIGNING_SECRET,
 )
-logger.info("Initialized SLACK_CONFIG")
-
 LLM_CONFIG = LLMConfig(api_url=LLM_API_URL, api_token=LLM_API_TOKEN)
-logger.info("Initialized LLM_CONFIG")
-
 APP_CONFIG = AppConfig(slack_config=SLACK_CONFIG, llm_config=LLM_CONFIG)
-logger.info("Initialized APP_CONFIG")
+
+logger.info(">>> Settings loaded.")

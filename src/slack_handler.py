@@ -7,8 +7,9 @@ from slack_bolt.app.async_app import AsyncApp
 from slack_sdk.web.async_client import AsyncWebClient
 
 from src.logger import setup_logger
-from .bot import TranslationBot, Message
+from .bot import TranslationBot
 from .config import APP_CONFIG
+from .slack_models import Message
 from .translator import Translator
 
 SlackSayFunction = Callable[..., Awaitable[Any]]
@@ -22,13 +23,6 @@ app = AsyncApp(
 
 translator: Translator = None  # type: ignore
 bot: TranslationBot = None  # type: ignore
-
-
-async def initialize_components():
-    """Initialize translator and bot components."""
-    global translator, bot
-    translator = Translator(APP_CONFIG.llm_config)
-    bot = TranslationBot(translator)
 
 
 @app.event("message")
@@ -59,7 +53,7 @@ async def handle_message(
             bot_replies = [
                 msg
                 for msg in thread_response["messages"]
-                if msg.get("bot_id") and msg["ts"] != message.ts  # 자신의 메시지 제외
+                if msg.get("bot_id") and msg["ts"] != message.ts
             ]
             if bot_replies:
                 logger.debug("Translation already exists, skipping...")
@@ -74,6 +68,13 @@ async def handle_message(
             text=response.text,
             blocks=response.blocks,
         )
+
+
+async def initialize_components():
+    """Initialize translator and bot components."""
+    global translator, bot
+    translator = Translator(APP_CONFIG.llm_config)
+    bot = TranslationBot(translator)
 
 
 async def handle_message_update(message: Message, client: AsyncWebClient) -> None:

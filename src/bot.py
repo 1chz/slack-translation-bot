@@ -1,58 +1,11 @@
 import json
-from dataclasses import dataclass
-from typing import Optional, Dict, Any
-
-from pydantic import BaseModel
+from typing import Optional
 
 from src.logger import setup_logger
+from .slack_models import Message, MessageResponse
 from .translator import Translator
 
 logger = setup_logger(__name__)
-
-
-class MessageResponse(BaseModel):
-    """
-    Slack Block Kit formatted translation response.
-    Ref. https://api.slack.com/reference/surfaces/formatting
-    """
-
-    thread_ts: str
-    text: str
-    blocks: list[Dict[str, Any]]
-
-
-@dataclass
-class Message:
-    """Data container for Slack messages."""
-
-    text: str
-    channel: str
-    user: str
-    ts: str
-    thread_ts: str
-
-    @classmethod
-    def from_event(cls, event: Dict[str, Any]) -> Optional["Message"]:
-        """Create a Message instance from a Slack event dictionary."""
-        if event.get("subtype") == "bot_message":
-            return None
-
-        if event.get("subtype") == "message_changed":
-            message_data = event.get("message", {})
-            return cls(
-                text=message_data.get("text", ""),
-                channel=event.get("channel", ""),
-                user=message_data.get("user", ""),
-                ts=message_data.get("ts", ""),
-                thread_ts=message_data.get("thread_ts"),
-            )
-
-        return cls(
-            **{
-                k: event.get(k, "")
-                for k in ["text", "channel", "user", "ts", "thread_ts"]
-            }
-        )
 
 
 class TranslationBot:

@@ -1,4 +1,20 @@
+import os
+
+from typing import Optional
+
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field, HttpUrl
+
+from src.logger import setup_logger
+
+logger = setup_logger(__name__)
+load_dotenv()
+
+
+class EnvironmentVariableError(Exception):
+    """Raised when required environment variables are missing."""
+
+    pass
 
 
 class SlackConfig(BaseModel):
@@ -7,6 +23,7 @@ class SlackConfig(BaseModel):
     Contains the necessary credentials for Slack API authentication.
     """
 
+    app_token: str = Field(..., min_length=1)
     bot_token: str = Field(..., min_length=1)
     signing_secret: str = Field(..., min_length=1)
 
@@ -18,7 +35,7 @@ class LLMConfig(BaseModel):
     """
 
     api_url: HttpUrl
-    api_token: str = Field(..., min_length=1)
+    api_token: Optional[str]
 
 
 class AppConfig(BaseModel):
@@ -27,5 +44,59 @@ class AppConfig(BaseModel):
     Validates and provides access to all application configuration settings.
     """
 
-    slack: SlackConfig
-    llm: LLMConfig
+    slack_config: SlackConfig
+    llm_config: LLMConfig
+
+
+def get_env_or_raise(key: str) -> str:
+    """
+    Get an environment variable or raise an exception if it's missing or empty.
+
+    Args:
+        key: The name of the environment variable
+
+    Returns:
+        The value of the environment variable
+
+    Raises:
+        EnvironmentVariableError: If the environment variable is missing or empty
+    """
+    value: Optional[str] = os.getenv(key)
+
+    if not value:
+        error_msg = f"Environment variable '{key}' is missing or empty"
+        logger.error(error_msg)
+        raise EnvironmentVariableError(error_msg)
+
+    return value
+
+
+logger.info("Loading configuration settings...")
+
+SLACK_APP_TOKEN = get_env_or_raise("SLACK_APP_TOKEN")
+logger.info("Loaded SLACK_APP_TOKEN")
+
+SLACK_BOT_TOKEN = get_env_or_raise("SLACK_BOT_TOKEN")
+logger.info("Loaded SLACK_BOT_TOKEN")
+
+SLACK_SIGNING_SECRET = get_env_or_raise("SLACK_SIGNING_SECRET")
+logger.info("Loaded SLACK_SIGNING_SECRET")
+
+LLM_API_URL = HttpUrl(get_env_or_raise("LLM_API_URL"))
+logger.info("Loaded LLM_API_URL")
+
+LLM_API_TOKEN = os.getenv("LLM_API_TOKEN")
+logger.info("Loaded LLM_API_TOKEN")
+
+SLACK_CONFIG = SlackConfig(
+    app_token=SLACK_APP_TOKEN,
+    bot_token=SLACK_BOT_TOKEN,
+    signing_secret=SLACK_SIGNING_SECRET,
+)
+logger.info("Initialized SLACK_CONFIG")
+
+LLM_CONFIG = LLMConfig(api_url=LLM_API_URL, api_token=LLM_API_TOKEN)
+logger.info("Initialized LLM_CONFIG")
+
+APP_CONFIG = AppConfig(slack_config=SLACK_CONFIG, llm_config=LLM_CONFIG)
+logger.info("Initialized APP_CONFIG")

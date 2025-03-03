@@ -31,18 +31,35 @@ async def handle_message(
 ) -> None:
     logger.debug(f"Received message event: {event}")
 
-    if event.get("subtype") == "bot_message":
-        logger.debug("Ignoring bot message")
+    if _is_bot_message(event):
         return
 
     message = Message.from_event(event)
     if not message:
         return
 
-    if event.get("subtype") == "message_changed":
-        await handle_message_update(message, client)
+    if _is_message_update(event):
+        await _handle_message_update(message, client)
         return
 
+    if await _translation_exists(message, client):
+        return
+
+    await _send_translation(message, say)
+
+
+def _is_bot_message(event: dict) -> bool:
+    if event.get("subtype") == "bot_message":
+        logger.debug("Ignoring bot message")
+        return True
+    return False
+
+
+def _is_message_update(event: dict) -> bool:
+    return event.get("subtype") == "message_changed"
+
+
+async def _translation_exists(message: Message, client: AsyncWebClient) -> bool:
     try:
         thread_response = await client.conversations_replies(
             ts=message.ts,
@@ -57,10 +74,14 @@ async def handle_message(
             ]
             if bot_replies:
                 logger.debug("Translation already exists, skipping...")
-                return
+                return True
     except Exception as e:
         logger.error(f"Error checking thread replies: {e}")
 
+    return False
+
+
+async def _send_translation(message: Message, say: SlackSayFunction) -> None:
     response = await bot.translate(message)
     if response:
         await say(
@@ -70,15 +91,7 @@ async def handle_message(
         )
 
 
-async def initialize_components():
-    """Initialize translator and bot components."""
-    global translator, bot
-    translator = Translator(APP_CONFIG.llm_config)
-    bot = TranslationBot(translator)
-
-
-async def handle_message_update(message: Message, client: AsyncWebClient) -> None:
-    """Handle message update events and update translation accordingly."""
+async def _handle_message_update(message: Message, client: AsyncWebClient) -> None:
     try:
         thread_response = await client.conversations_replies(
             channel=message.channel, ts=message.thread_ts
@@ -113,9 +126,16 @@ async def handle_message_update(message: Message, client: AsyncWebClient) -> Non
         logger.error(f"Error handling message update: {e}")
 
 
+async def _initialize_components():
+    """Initialize translator and bot components."""
+    global translator, bot
+    translator = Translator(APP_CONFIG.llm_config)
+    bot = TranslationBot(translator)
+
+
 async def start_async_handler():
     try:
-        await initialize_components()
+        await _initialize_components()
 
         handler = AsyncSocketModeHandler(app, APP_CONFIG.slack_config.app_token)
         await handler.connect_async()
